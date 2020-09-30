@@ -1,6 +1,16 @@
-let CanvasTools = function ({
+if (typeof CanvasTools != 'undefined') {
+    delete CanvasTools;
+}
+
+var CanvasTools = function ({
                                 eleId,
-                                bgColor = 'white',
+                                bgColor = {
+                                    values: [],
+                                    angle: 0,
+                                    type: 'liner',
+                                    url: null,
+                                    repeat: false,
+                                },
                             }) {
     this.configs = {
         eleId,
@@ -11,24 +21,56 @@ let CanvasTools = function ({
     this.height = this.canvasBox.height;
     this.contexts = new Array();
     this.counter = 0;
-    this.onLoads = [];
     this.init();
 }
 
 CanvasTools.prototype.init = function () {
-    this.bgContext = this.canvasBox.getContext('2d');
-    this.bgContext.fillStyle = this.configs.bgColor;
-    this.bgContext.fillRect(0, 0, this.width, this.height);
+    if (typeof this.configs.bgColor == 'object') {
+        if (this.configs.bgColor.url) {
+            this.canvasBox.style.background = 'url("' + this.configs.bgColor.url + '")';
+            this.canvasBox.style["background-position"] = 'center';
+            if (!this.configs.bgColor.repeat) {
+                this.canvasBox.style['background-repeat'] = 'no-repeat';
+            }
+        } else {
+            let color = '';
+            if (this.configs.bgColor.values.length == 1) {
+                color = this.configs.bgColor.values[0];
+            } else {
+                this.configs.bgColor.values.forEach((item) => {
+                    if (color) {
+                        color += ',';
+                    }
+                    if (typeof item == 'object') {
+                        color += item[0] + " " + item[1];
+                    } else {
+                        color += item;
+                    }
+                })
+                if (this.configs.bgColor.type == 'radial') {
+                    color = 'radial-gradient(circle' + color + ')';
+                } else {
+                    if (this.configs.bgColor.angle) {
+                        color = this.configs.bgColor.angle + 'deg,' + color;
+                    }
+                    color = 'linear-gradient(' + color + ')';
+                }
+            }
+            this.canvasBox.style['background'] = color;
+        }
+    } else {
+        this.canvasBox.style.background = this.configs.bgColor;
+    }
 }
-// CanvasTools.prototype.onLoad = function () {
-//     window.onload = () => {
-//     this.onLoads.forEach((item) => {
-//         console.log(item, '===<')
-//         var func = item.fn;
-//         func(...item.args);
-//     })
-//     }
-// }
+
+CanvasTools.prototype.createImageElement = function (url, onload) {
+    let img = new Image();
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+        onload && onload.call(this, img)
+    };
+    img.src = url;
+}
 
 
 /**
@@ -48,107 +90,9 @@ CanvasTools.prototype.init = function () {
  * @param align
  * @returns {*}
  */
-CanvasTools.prototype.addImage = function ({
-                                               ctx = null,
-                                               name = null,
-                                               coverName = false,
-                                               imgUrl,
-                                               isCut = false,
-                                               sx = 0,
-                                               sy = 0,
-                                               swidth = 0,
-                                               sheight = 0,
-                                               left = false,
-                                               right = false,
-                                               top = false,
-                                               bottom = false,
-                                               width = 0,
-                                               height = 0,
-                                               align = 'left',
-                                               vertical = 'top',
-                                               shadowColor = 'black',
-                                               shadowBlur = 0,
-                                               shadowOffsetX = 0,
-                                               shadowOffsetY = 0,
-                                           }) {
-    if (name && this.contexts[name] && !coverName) {
-        throw new Error(name + ' 索引已存在，如需可设置参数coverName:true强制覆盖原有context')
-    }
-    if (!ctx) {
-        ctx = this.canvasBox.getContext('2d');
-        if (name === null || !name) {
-            name = this.counter;
-            this.counter += 1;
-        }
-        this.contexts[name] = {
-            ctx,
-            name,
-            coverName,
-            isCut,
-            width,
-            height,
-            left,
-            right,
-            top,
-            bottom,
-            sx,
-            sy,
-            swidth,
-            sheight,
-            align,
-            vertical,
-            imgUrl,
-            shadowColor,
-            shadowBlur,
-            shadowOffsetX,
-            shadowOffsetY,
-        };
-    }
-    let img = new Image(), x = 0, y = 0;
-
-    img.src = imgUrl;
-    img.onload = () => {
-        ctx.shadowBlur = shadowBlur;
-        ctx.shadowColor = shadowColor;
-        ctx.shadowOffsetY = shadowOffsetY;
-        ctx.shadowOffsetX = shadowOffsetX;
-        if (!width && !height) {
-            width = img.width;
-            height = img.height;
-        } else if (!width || !height) {
-            let p = img.width / img.height;
-            width ? height = width / p : width = height * p;
-        }
-        if (align != 'left') {
-            if (align == 'center') {
-                x = (this.width - width) / 2;
-            } else if (align == 'right') {
-                x = this.width - width;
-            }
-        }
-        if (vertical != 'top') {
-            if (vertical == 'middle') {
-                y = (this.height - height) / 2;
-            } else if (vertical == 'bottom') {
-                y = this.height - height;
-            }
-        }
-        if (left) {
-            x = x + left;
-        } else if (right) {
-            x = x - right;
-        }
-        if (top) {
-            y = y + top;
-        } else if (bottom) {
-            y = y - bottom;
-        }
-        if (isCut) {
-            ctx.drawImage(img, sx, sy, swidth, sheight, x, y, width, height);
-        } else {
-            ctx.drawImage(img, x, y, width, height);
-        }
-    }
+CanvasTools.prototype.addImage = function () {
+    arguments[0].canvas = this;
+    this.contexts.push((new CanvasImage(...arguments)).draw());
     return this;
 }
 
@@ -169,106 +113,9 @@ CanvasTools.prototype.addImage = function ({
  * @param shadowOffsetY
  * @returns {CanvasTools}
  */
-CanvasTools.prototype.line = function ({
-                                           name = null,
-                                           ctx = null,
-                                           color = null,
-                                           points = [],
-                                           lineWidth = 1,
-                                           lineJoin = 'round', //bevel|round|miter
-                                           miterLimit = 0,
-                                           lineCap = 'round', //butt|round|square
-                                           shadowColor = 'black',
-                                           shadowBlur = 0,
-                                           shadowOffsetX = 0,
-                                           shadowOffsetY = 0,
-                                       }) {
-    if (points.length) {
-        let beginPoint = points.shift();
-        if (!ctx) {
-            ctx = this.canvasBox.getContext('2d');
-            if (!name) {
-                name = this.counter;
-                this.counter += 1;
-            }
-            this.contexts[name] = {
-                ctx,
-                name,
-                color,
-                points,
-                lineWidth,
-                lineJoin,
-                miterLimit,
-                shadowColor,
-                shadowBlur,
-                shadowOffsetX,
-                shadowOffsetY,
-            }
-        }
-        let minX = 0, minY = 0, maxX = 0, maxY = 0;
-        ctx.beginPath();
-        ctx.lineJoin = lineJoin;
-        ctx.miterLimit = miterLimit;
-        ctx.shadowColor = shadowColor;
-        ctx.shadowBlur = shadowBlur;
-        ctx.shadowOffsetY = shadowOffsetY;
-        ctx.shadowOffsetX = shadowOffsetX;
-        ctx.lineCap = lineCap;
-        ctx.lineWidth = lineWidth;
-        if (typeof beginPoint == 'object') {
-            maxX = minX = beginPoint[0];
-            maxY = minY = beginPoint[1];
-            ctx.moveTo(beginPoint[0], beginPoint[1]);
-        } else {
-            maxX = maxY = minX = minY = beginPoint;
-            ctx.moveTo(beginPoint, beginPoint);
-        }
-        points.forEach((point) => {
-            if (typeof point == 'object') {
-                if (minX > point[0]) {
-                    minX = point[0];
-                }
-                if (minY > point[1]) {
-                    minY = point[1];
-                }
-                if (maxX < point[0]) {
-                    maxX = point[0];
-                }
-                if (maxY < point[1]) {
-                    maxY = point[1];
-                }
-                ctx.lineTo(point[0], point[1])
-            } else {
-                if (minX > point) {
-                    minX = point;
-                }
-                if (minY > point) {
-                    minY = point;
-                }
-                if (maxX < point) {
-                    maxX = point;
-                }
-                if (maxY < point) {
-                    maxY = point;
-                }
-                ctx.lineTo(point, point)
-            }
-        })
-        if (color) {
-            if (typeof color == 'object') {
-                let r = Math.sqrt(Math.pow(maxX - minX, 2) + Math.pow(maxY - minY, 2)) / 2;
-                // console.log('r', r, maxY, minY, maxX, minX, color)
-                color = this.createGradient(ctx, {
-                    color: color.values,
-                    angle: color.angle ? color.angle : 0,
-                    scale: color.scale ? color.scale : 1,
-                }, minX + (maxX - minX) / 2, minY + (maxY - minY) / 2, r)
-            }
-            ctx.strokeStyle = color;
-        }
-
-        ctx.stroke();
-    }
+CanvasTools.prototype.line = function () {
+    arguments[0].canvas = this;
+    this.contexts.push((new CanvasLine(...arguments)).draw());
     return this;
 }
 
@@ -285,122 +132,9 @@ CanvasTools.prototype.line = function ({
  * @param right
  * @param isStroke
  */
-CanvasTools.prototype.addText = function ({
-                                              name = null,
-                                              text,
-                                              ctx = null,
-                                              color = 'black',
-                                              align = 'left',
-                                              vertical = 'top',
-                                              font = '1rem 黑体 bolder',
-                                              textAlign = 'left',
-                                              textBaseline = 'top',
-                                              top = false,
-                                              bottom = false,
-                                              left = false,
-                                              right = false,
-                                              isStroke = false,
-                                              maxWidth = 0,
-                                              colorType = 'liner',
-                                              colorScale = 1,
-                                              shadowColor = 'black',
-                                              shadowBlur = 0,
-                                              shadowOffsetX = 0,
-                                              shadowOffsetY = 0,
-                                          }) {
-    let x = 0, y = 0, r = 0;
-    if (!text) {
-        throw new Error('未设置文本');
-    }
-    if (align == 'right') {
-        x = this.width;
-        textAlign = 'right';
-    } else if (align == 'center') {
-        x = (this.width) / 2;
-        textAlign = 'center';
-    }
-    if (vertical == 'middle') {
-        y = this.height / 2;
-        textBaseline = 'middle';
-    } else if (vertical == 'bottom') {
-        y = this.height;
-        textBaseline = 'bottom';
-    }
-    if (top) {
-        y = y + top;
-    } else if (bottom) {
-        y = y - bottom;
-    }
-    if (left) {
-        x = x + left;
-    } else if (right) {
-        x = x - right;
-    }
-    if (!ctx) {
-        ctx = this.canvasBox.getContext('2d');
-        if (!name) {
-            name = this.counter;
-            this.counter += 1;
-        }
-        this.contexts[name] = {
-            name,
-            text,
-            ctx,
-            color,
-            align,
-            vertical,
-            font,
-            textAlign,
-            textBaseline,
-            top,
-            bottom,
-            left,
-            right,
-            isStroke,
-            maxWidth,
-            colorType,
-            colorScale,
-            shadowColor,
-            shadowBlur,
-            shadowOffsetX,
-            shadowOffsetY,
-        }
-    }
-    ctx.beginPath();
-    ctx.shadowBlur = shadowBlur;
-    ctx.shadowColor = shadowColor;
-    ctx.shadowOffsetX = shadowOffsetX;
-    ctx.shadowOffsetY = shadowOffsetY;
-    ctx.textBaseline = textBaseline;
-    ctx.textAlign = textAlign;
-    ctx.font = font;
-
-    if (typeof color == 'object') {
-        r = ctx.measureText(text).width;
-        if (colorType == 'radial') {
-            r = r / (color.values.length - 1 > 0 ? color.values.length - 1 : 1);
-        }
-        color = this.createGradient(ctx, {
-            color: color.values,
-            type: colorType,
-            scale: colorScale,
-        }, x, y, r)
-    }
-    if (isStroke) {
-        ctx.strokeStyle = color;
-        if (maxWidth > 0) {
-            ctx.strokeText(text, x, y, maxWidth);
-        } else {
-            ctx.strokeText(text, x, y);
-        }
-    } else {
-        ctx.fillStyle = color;
-        if (maxWidth > 0) {
-            ctx.fillText(text, x, y, maxWidth);
-        } else {
-            ctx.fillText(text, x, y);
-        }
-    }
+CanvasTools.prototype.addText = function () {
+    arguments[0].canvas = this;
+    this.contexts.push((new CanvasText(...arguments)).draw())
     return this;
 }
 
@@ -441,336 +175,691 @@ CanvasTools.prototype.createGradient = function (ctx, options, x = 0, y = 0, r =
     return gradient;
 }
 
-CanvasTools.prototype.setBgImage = function ({
-                                                 ctx,
-                                                 bgImg,
-
-                                             }) {
-    var img = new Image();
-    img.src = bgImg;
-    window.onload = () => {
-        var bg = ctx.createPattern(img, "no-repeat");//createPattern() 方法在指定的方向内重复指定的元素。
-        ctx.fillStyle = bg;//fillStyle 属性设置或返回用于填充绘画的颜色、渐变或模式。
-        // ctx.fillRect(0, 0, c.width, c.height);//绘制已填充矩形fillRect(左上角x坐标, 左上角y坐标, 宽, 高)
-        ctx.fill();
-    }
-    return ctx;
-}
 /**
  * 添加一个圆圈，可带文本
- * @param name
- * @param r
- * @param sAngle
- * @param eAngle
- * @param counterclockwise
- * @param left
- * @param right
- * @param top
- * @param bottom
- * @param bgColor 可以为字符串，如'black'等代表颜色的单词或颜色进制码，
- *                也可以为对象，如{
- *                  color: ['red','yellow','black',], // 颜色集合
- *                  type:'radial', // 渐变类型（radial--放射状渐变， liner--线性渐变），默认liner
- *                  angle: 180, // 当type=liner时有效，倾斜角
- *                  scale:2, // 当type=radial时有效，伸缩倍数
- *                }
- * @param content 如： {
- *      text: '', //文本
- *      font: '', //文本样式
- *      textAlign: '', //文本水平位置
- *      textBaseLine: '', //文本垂直位置
- *      isStroke: true, //是否为非填充文本
- *      color: 'black',// 文本颜色，可以为对象，如：['red', 'yellow']
- * }
- * @param lineColor 可以为字符串，如'black'等代表颜色的字符串，
- *                  也可以为对象，如['red', 'yellow', 'green']
- * @returns {*}
+ * @returns {CanvasTools}
  */
-CanvasTools.prototype.addCircle = function ({
-                                                name = null,
-                                                r = 0,
-                                                sAngle = 0,
-                                                eAngle = 2 * Math.PI,
-                                                counterclockwise = false,
-                                                left = false,
-                                                right = false,
-                                                top = false,
-                                                bottom = false,
-                                                bgColor = 'white',
-                                                content = {
-                                                    text: '',
-                                                    font: '',
-                                                    textAlign: '',
-                                                    textBaseLine: '',
-                                                    isStroke: true,
-                                                    color: 'black',
-                                                    shadowColor: 'black',
-                                                    shadowBlur: 0,
-                                                    shadowOffsetX: 0,
-                                                    shadowOffsetY: 0,
-                                                },
-                                                lineColor = 'red',
-                                                shadowColor = 'black',
-                                                shadowBlur = 0,
-                                                shadowOffsetX = 0,
-                                                shadowOffsetY = 0,
-                                                bgImg = '',
-                                                lineWidth = 5,
-                                            }) {
-    let ctx = this.canvasBox.getContext('2d'), x = r, y = r;
-    let fn = (fillStyle, imgW, imgH) => {
-        if (left || right) {
-            if (left) {
-                x = r + left;
-            } else if (right) {
-                x = this.width - r - right;
-            }
-        }
-        if (top || bottom) {
-            if (top) {
-                y = r + top;
-            } else if (bottom) {
-                y = this.height - r - bottom;
-            }
-        }
+CanvasTools.prototype.addCircle = function () {
+    arguments[0].canvas = this;
+    this.contexts.push((new CanvasCircle(...arguments)).draw())
+    return this;
+}
 
-        ctx.beginPath();
-        // ctx.translate(x - r, y - r);
-        ctx.shadowBlur = shadowBlur;
-        ctx.shadowColor = shadowColor;
-        ctx.shadowOffsetX = shadowOffsetX;
-        ctx.shadowOffsetY = shadowOffsetY;
-        ctx.arc(x, y, r, sAngle, eAngle, counterclockwise);
-        ctx.save();
-        if (fillStyle === null) {
-            ctx.arc(x, y, r, sAngle, eAngle, counterclockwise);
-            typeof bgColor == 'object' ? bgColor = this.createGradient(ctx, {
-                color: bgColor.values,
-                angle: bgColor.angle ? bgColor.angle : 0,
-                scale: bgColor.scale ? bgColor.scale : 1,
-            }, x, y, r) : '';
-            fillStyle = bgColor;
-        } else {
-            ctx.translate(x - imgW / 2, y - imgH / 2);
+
+/**
+ * 贝塞尔曲线   todo:: 曲线切线的交点算法求解x,y
+ * @param points
+ * @param color
+ * @returns {CanvasTools}
+ */
+CanvasTools.prototype.curveLine = function ({
+                                                points = [],
+                                                color = {
+                                                    values: [],
+                                                    type: 'liner',
+                                                    scale: 1,
+                                                }
+                                            }) {
+    let ctx = this.canvasBox.getContext('2d'), x = 0, y = 0, x1 = 0, y1 = 0, maxX = 0, maxY = 0, minX = 0, minY = 0;
+    if (points.length) {
+        points.forEach((item, i) => {
+            if (typeof item == 'object') {
+                x = item[0];
+                y = item[1];
+            } else {
+                x = y = item;
+            }
+            if (minX > x) minX = x;
+            if (minY > y) minY = y;
+            if (maxX < x) maxX = x;
+            if (maxY < y) maxY = y;
+            if (i == 0) {
+                ctx.moveTo(x, y)
+            }
+            let vo = points[i + 1];
+            if (vo) {
+                if (typeof vo == 'object') {
+                    x1 = vo[0];
+                    y1 = vo[1];
+                } else {
+                    x1 = y1 = vo;
+                }
+                ctx.quadraticCurveTo(x, y, x1, y1);
+            }
+        })
+        if (typeof color == 'object') {
+            if (color.values.length) {
+                let x = (maxX - minX) / 2, y = (maxY - minY) / 2, r = Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2));
+                color = this.createGradient(ctx, {
+                    color: color.values,
+                    type: color.type ? color.type : 'liner',
+                    scale: color.scale ? color.scale : 1,
+                    angle: color.angle ? color.angle : 0,
+                }, x, y, r);
+            } else {
+                color = 'rgba(0,0,0,1)';
+            }
         }
-        ctx.fillStyle = fillStyle;
-        ctx.fill();
-        ctx.restore();
-        if (typeof lineColor == 'object') {
-            lineColor = this.createGradient(ctx, {
-                color: lineColor.values,
-                angle: lineColor.angle ? lineColor.angle : 0,
-                scale: lineColor.scale ? lineColor.scale : 1,
-            }, x, y, r);
-        }
-        ctx.arc(x, y, r, sAngle, eAngle, counterclockwise);
-        ctx.lineWidth = lineWidth;
-        ctx.strokeStyle = lineColor;
+        ctx.strokeStyle = color;
         ctx.stroke();
-        if (!content.font) {
-            content.font = '.8rem 黑体 bolder';
-        }
-        if (!content.textAlign) {
-            content.textAlign = 'center';
-        }
-        if (!content.textBaseLine) {
-            content.textBaseLine = 'middle';
-        }
-        if (!content.color) {
-            content.color = 'black';
-        }
-        if (name === null || !name) {
-            name = this.counter;
-            this.counter += 1;
-        }
-        if (content.text) {
-            this.addText({
-                ctx,
-                text: content.text,
-                textAlign: content.textAlign,
-                font: content.font,
-                textBaseline: content.textBaseLine,
-                isStroke: content.isStroke,
-                color: content.color,
-                left: x,
-                top: y,
-                shadowColor: content.shadowColor ? content.shadowColor : 'black',
-                shadowBlur: content.shadowBlur ? content.shadowBlur : 0,
-                shadowOffsetY: content.shadowOffsetY ? content.shadowOffsetY : 0,
-                shadowOffsetX: content.shadowOffsetX ? content.shadowOffsetX : 0,
-            })
-        }
-        this.contexts[name] = {
-            ctx,
-            x,
-            y,
-            r,
-            left,
-            right,
-            top,
-            bottom,
-            sAngle,
-            eAngle,
-            counterclockwise,
-            bgColor,
-            lineColor,
-            content,
-            name,
-            width: 2 * r,
-            height: 2 * r,
-            shadowColor,
-            shadowBlur,
-            shadowOffsetX,
-            shadowOffsetY,
-        };
     }
-    if (bgImg) {
-        let img = new Image();
-        img.src = bgImg;
-        img.onload = () => {
-            let bg = ctx.createPattern(img, "no-repeat");
-            fn.call(this, bg, img.width, img.height)
-        }
+    return this;
+}
+
+CanvasTools.prototype.addRect = function () {
+    arguments[0].canvas = this;
+    this.contexts.push((new CanvasRect(...arguments)).draw())
+    return this;
+}
+
+/**************************************公共属性************************************/
+var CommonAttributes = function () {
+    this.canvas = arguments[0].canvas;
+    if (arguments[0].ctx) {
+        this.ctx = arguments[0].ctx;
     } else {
-        fn.call(this, null)
+        this.ctx = this.canvas.canvasBox.getContext('2d');
+    }
+    this.points = [];
+    this.imgUrl = '';
+    this.imgCut = false;
+    this.sx = 0;
+    this.sy = 0;
+    this.swidth = 0;
+    this.sheight = 0;
+    this.r = 0;
+    this.y = 0;
+    this.x = 0;
+    this.width = 0;
+    this.height = 0;
+    this.name = null;
+    this.sAngle = 0;
+    this.eAngle = 2 * Math.PI;
+    this.counterclockwise = false;
+    this.left = 0;
+    this.right = 0;
+    this.top = 0;
+    this.bottom = 0;
+    this.bgColor = {
+        values: [],
+        type: 'liner',
+        scale: 1,
+        angle: 0,
+        url: null,
+        repeat: false,
+    };
+    this.align = 'left';
+    this.vertical = 'top';
+    this.text = '';
+    this.font = {
+        style: "normal",
+        variant: "normal",
+        weight: "normal",
+        size: "1rem",  //规定字号和行高，以像素计。
+        family: "黑体", //规定字体系列。
+        caption: "黑体", //使用标题控件的字体（比如按钮、下拉列表等）。
+        icon: "黑体", //使用用于标记图标的字体。
+        menu: "黑体", //使用用于菜单中的字体（下拉列表和菜单列表）。
+        "message-box": "黑体", //使用用于对话框中的字体。
+        "small-caption": "黑体",//使用用于标记小型控件的字体。
+        "status-bar": "黑体", //使用用于窗口状态栏中的字体。
+    };
+
+    this.textAlign = 'left';
+    this.textBaseLine = 'top';
+    this.isStroke = false;
+    this.textColor = {
+        values: ['black'],
+        type: 'liner',
+        scale: 1,
+        angle: 0,
+    };
+    this.maxWidth = null;
+    this.textType = null;
+    this.shadowColor = 'black';
+    this.shadowBlur = 0;
+    this.shadowOffsetX = 0;
+    this.shadowOffsetY = 0;
+    this.miterLimit = 0;
+    this.lineJoin = 'round';
+    this.lineCap = 'round';
+    this.lineColor = {
+        values: ['black'],
+        type: 'liner',
+        scale: 1,
+        angle: 0,
+    };
+    this.lineWidth = 1;
+    let argv = arguments[0];
+    for (var i in argv) {
+        if (typeof argv[i] == 'object') {
+            for (var j in argv[i]) {
+                if (!this[i]) {
+                    this[i] = {};
+                }
+                this[i][j] = argv[i][j];
+            }
+        } else {
+            this[i] = argv[i];
+        }
+    }
+    return this;
+}
+
+/**********************************圆圈***********************************/
+if (typeof CanvasCircle != "undefined") {
+    delete CanvasCircle;
+}
+var CanvasCircle = function () {
+    CommonAttributes.call(this, ...arguments);
+    if (!this.name) {
+        this.name = 'circle-' + this.canvas.counter;
+        this.canvas.counter += 1;
+    }
+    // 计算x,y
+    this.x = this.r;
+    this.y = this.r;
+    if (this.left) {
+        this.x = this.r + this.left;
+    } else if (this.right) {
+        this.x = this.canvas.width - this.r - this.right;
+    }
+    if (this.top) {
+        this.y = this.r + this.top;
+    } else if (this.bottom) {
+        this.y = this.canvas.height - this.r - this.bottom;
+    }
+    if (typeof this.lineColor == 'object') {
+        if (this.lineColor.values && this.lineColor.values.length) {
+            this.lineColor = this.canvas.createGradient(this.ctx, {
+                color: this.lineColor.values,
+                angle: this.lineColor.angle ? this.lineColor.angle : 0,
+                scale: this.lineColor.scale ? this.lineColor.scale : 1,
+                type: this.lineColor.type ? this.lineColor.type : 'liner',
+            }, this.x, this.y, this.r);
+        } else {
+            this.lineColor = 'black';
+        }
+    }
+    if (typeof this.bgColor == 'object') {
+        if (this.bgColor.values && this.bgColor.values.length) {
+            this.bgColor.values = this.canvas.createGradient(this.ctx, {
+                color: this.bgColor.values,
+                angle: this.bgColor.angle ? this.bgColor.angle : 0,
+                scale: this.bgColor.scale ? this.bgColor.scale : 1,
+                type: this.bgColor.type ? this.bgColor.type : 'liner',
+            }, this.x, this.y, this.r);
+        }
+    }
+    if (!this.content.color || (typeof this.content.color == 'object' && (!this.content.color.values || !this.content.color.values.length))) {
+        this.content.color = 'black';
+    }
+    return this;
+}
+
+CanvasCircle.prototype.draw = function (callback = null) {
+    let fn = (fillStyle, imgW, imgH) => {
+        this.ctx.save();
+        this.ctx.beginPath();
+        // 实心圆
+        this.ctx.arc(this.x, this.y, this.r, this.sAngle, this.eAngle, this.counterclockwise);
+        if (fillStyle) {
+            this.ctx.translate(this.x - imgW / 2, this.y - imgH / 2);
+        } else {
+            fillStyle = this.bgColor.values;
+        }
+        this.ctx.fillStyle = fillStyle;
+        this.ctx.fill();
+        this.ctx.restore();
+        // 空心圆
+        this.ctx.save();
+        this.ctx.lineWidth = this.lineWidth;
+        this.ctx.strokeStyle = this.lineColor;
+        this.ctx.shadowBlur = this.shadowBlur;
+        this.ctx.shadowColor = this.shadowColor;
+        this.ctx.shadowOffsetX = this.shadowOffsetX;
+        this.ctx.shadowOffsetY = this.shadowOffsetY;
+        this.ctx.stroke();
+        this.ctx.restore();
+        if (this.content && this.content.text) {
+            this.ctx.save();
+            this.ctx.translate(this.x, this.y)
+            this.content.ctx = this.ctx;
+            this.content.textType = 'circle';
+            this.content.r = this.r;
+            if (!this.content.vertical) {
+                this.content.vertical = 'middle';
+            }
+            if (!this.content.align) {
+                this.content.align = 'center';
+            }
+            this.content.canvas = this.canvas;
+            this.textCtx = new CanvasText(this.content);
+            this.textCtx.draw();
+            this.ctx.restore();
+        }
+        callback && callback.call(this);
+    }
+    if (this.bgColor.url) {
+        this.canvas.createImageElement(this.bgColor.url, (img) => {
+            let bg = this.ctx.createPattern(img, this.bgColor.repeat ? 'repeat' : 'no-repeat');
+            fn.call(this, bg, img.width, img.height)
+        });
+    } else {
+        fn.call(this)
     }
     return this;
 }
 
 
-let c = new CanvasTools({
-    eleId: 'goodNews',
-    bgColor: 'rgba(242, 242, 242, 1)',
-});
+/************************************文本**************************************/
+if (typeof CanvasText != 'undefined') {
+    delete CanvasText;
+}
+var CanvasText = function () {
+    CommonAttributes.call(this, ...arguments);
+    let x = this.x, y = this.y;
+    if (!this.text) {
+        throw new Error('未设置文本');
+    }
+    this.textW = this.ctx.measureText(this.text).width;
 
-c.addText({
-    text: '喜报.No.89',
-    color: [
-        'red',
-        'yellow',
-        'green',
-    ],
-    align: 'center',
-    vertical: 'middle',
-    // shadowBlur:5
-})
-c.addImage({
-    name: 'logo',
-    imgUrl: '/images/static/lg.png',
-    width: 150,
-    align: 'center',
-    top: 25,
-    shadowBlur: 0,
-});
-
-c.addCircle({
-    name: 'order',
-    r: 50,
-    right: 10,
-    top: 10,
-    bgImg: '/images/static/loading.png',
-    bgColor: {
-        values: [
-            'blue',
-            'yellow'
-        ]
-    },
-    lineColor: {
-        values: [
-            'green',
-            'yellow',
-            'red',
-        ]
-    },
-    content: {
-        text: 'No.99',
-        color: [
-            'red',
-        ],
-        // shadowBlur: 5,
-        // shadowColor: 'blue'
-    },
-    // shadowBlur: 15,
-    // shadowColor: 'blue'
-});
-
-
-c.line({
-    color: {
-        values: [
-            'rgba(115, 170, 229, 0)',
-            'rgba(115, 170, 229, 1)',
-        ],
-        scale: 1,
-    },
-    points: [
-        [170, 50],
-        [650, 50]
-    ],
-    lineWidth: 3,
-    lineJoin: 'miter',
-    miterLimit: 5,
-})
-c.line({
-    color: 'rgba(115, 170, 229, 1)',
-    points: [
-        [650, 50],
-        [670, 90],
-        [880, 90],
-        [900, 50],
-    ],
-    lineWidth: 3,
-    lineJoin: 'round',
-    miterLimit: 1,
-    lineCap: 'round',
-})
-c.line({
-    color: {
-        values: [
-            'rgba(115, 170, 229, 1)',
-            'rgba(115, 170, 229, 0)',
-        ],
-        scale: 1,
-    },
-    points: [
-        [900, 50],
-        [1380, 50]
-    ],
-    lineWidth: 3,
-})
-// c.onLoad();
-
-
-c.addCircle({
-    name: 'order',
-    r: 150,
-    right: 300,
-    top: 300,
-    bgImg: '/images/static/lock.png',
-    bgColor: {
-        values: [
-            'blue',
-            'yellow'
-        ]
-    },
-    lineColor: {
-        values: [
-            'green',
-            'yellow',
-            'red',
-        ]
-    },
-    content: {
-        text: 'No.99',
-        color: {
-            values: [
-                'red',
-            ]
+    this.switch(this.align, {
+        right: () => {
+            this.switch(this.textType, {
+                default: () => {
+                    this.x = this.canvas.width;
+                },
+                circle: () => {
+                    this.x = this.r;
+                },
+                rect: () => {
+                    this.x = this.width;
+                }
+            })
+            x = this.x - this.textW / 1.5;
+            this.textAlign = 'right';
         },
-        // shadowBlur: 5,
-        // shadowColor: 'blue'
-    },
-    // shadowBlur: 15,
-    // shadowColor: 'blue'
-});
+        center: () => {
+            this.switch(this.textType, {
+                default: () => {
+                    this.x = (this.canvas.width) / 2;
+                },
+                rect: () => {
+                    this.x = this.width / 2;
+                }
+            })
+            x = this.x;
+            this.textAlign = 'center';
+        },
+        default: () => {
+            this.switch(this.textType, {
+                circle: () => {
+                    this.x = -this.r;
+                },
+            })
+            x = this.x + this.textW / 1.5;
+            this.textAlign = 'left';
+        }
+    })
 
+    this.switch(this.vertical, {
+        middle: () => {
+            this.switch(this.textType, {
+                default: () => {
+                    this.y = this.canvas.height / 2;
+                },
+                rect: () => {
+                    this.y = this.height / 2;
+                }
+            })
+            this.textBaseline = 'middle';
+        },
+        bottom: () => {
+            this.switch(this.textType, {
+                default: () => {
+                    this.y = this.canvas.height;
+                },
+                rect: () => {
+                    this.y = this.height;
+                },
+                circle: () => {
+                    this.y = this.r;
+                }
+            })
+            this.textBaseline = 'bottom';
+        },
+        default: () => {
+            this.switch(this.textType, {
+                circle: () => {
+                    this.y = -this.r;
+                }
+            })
+            this.textBaseline = 'top';
+        }
+    })
+    if (this.top) {
+        this.y = this.y + this.top;
+    } else if (this.bottom) {
+        this.y = this.y - this.bottom;
+    }
+    if (this.left) {
+        this.x = this.x + this.left;
+        x += this.left;
+    } else if (this.right) {
+        this.x = this.x - this.right;
+        x -= this.right;
+    }
+    if (!this.name) {
+        this.name = 'text-' + this.canvas.counter;
+        this.canvas.counter += 1;
+    }
+    if (typeof this.textColor == 'object') {
+        // console.log(this.x, this.y, this.textW, '.>>>>>')
+        this.textColor = this.canvas.createGradient(this.ctx, {
+            color: this.textColor.values,
+            type: this.textColor.type ? this.textColor.type : 'liner',
+            scale: this.textColor.scale ? this.textColor.scale : 1,
+            angle: this.textColor.angle ? this.textColor.angle : 0,
+        }, x, y, this.textW / 2)
+    }
+}
+
+CanvasText.prototype.switch = function (key, callbacks) {
+    switch (key) {
+        case 'circle':
+            callbacks.circle && callbacks.circle.call(this);
+            break;
+        case 'rect':
+            callbacks.rect && callbacks.rect.call(this);
+            break;
+        case 'right':
+            callbacks.right && callbacks.right.call(this);
+            break;
+        case 'center':
+            callbacks.center && callbacks.center.call(this);
+            break;
+        case 'middle':
+            callbacks.middle && callbacks.middle.call(this);
+            break;
+        case 'bottom':
+            callbacks.bottom && callbacks.bottom.call(this);
+            break;
+        default:
+            callbacks.default && callbacks.default.call(this);
+    }
+}
+
+CanvasText.prototype.draw = function (callback = null) {
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.shadowBlur = this.shadowBlur;
+    this.ctx.shadowColor = this.shadowColor;
+    this.ctx.shadowOffsetX = this.shadowOffsetX;
+    this.ctx.shadowOffsetY = this.shadowOffsetY;
+    this.ctx.textBaseline = this.textBaseline;
+    this.ctx.textAlign = this.textAlign;
+    this.ctx.font = Object.values(this.font).join(' ');
+    this.ctx.lineWidth = this.lineWidth;
+    if (this.isStroke) {
+        this.ctx.strokeStyle = this.textColor;
+        if (this.maxWidth > 0) {
+            this.ctx.strokeText(this.text, this.x, this.y, this.maxWidth);
+        } else {
+            this.ctx.strokeText(this.text, this.x, this.y);
+        }
+    } else {
+        this.ctx.fillStyle = this.textColor;
+        if (this.maxWidth > 0) {
+            this.ctx.fillText(this.text, this.x, this.y, this.maxWidth);
+        } else {
+            this.ctx.fillText(this.text, this.x, this.y);
+        }
+    }
+    this.ctx.restore();
+    callback && callback.call(this);
+    return this;
+}
+
+/***********************************方块***************************************/
+if (typeof CanvasRect != 'undefined') {
+    delete CanvasRect;
+}
+var CanvasRect = function () {
+    CommonAttributes.call(this, ...arguments);
+    // console.log(this);
+    if (this.align == 'right') {
+        this.x = this.canvas.width - this.width;
+    } else if (this.align == 'center') {
+        this.x = (this.canvas.width - this.width) / 2;
+    }
+    if (this.vertical == 'middle') {
+        this.y = (this.canvas.height - this.height) / 2;
+    } else if (this.vertical == 'bottom') {
+        this.y = this.canvas.height - this.height;
+    }
+    if (this.left) {
+        this.x = this.x + this.left;
+    } else if (this.right) {
+        this.x = this.x - this.right;
+    }
+    if (this.top) {
+        this.y = this.y + this.top;
+    } else if (this.bottom) {
+        this.y = this.y - this.bottom;
+    }
+    if (typeof this.lineColor == 'object') {
+        if (this.lineColor.values.length) {
+            this.lineColor = this.canvas.createGradient(this.ctx, {
+                color: this.lineColor.values,
+                type: this.lineColor.type ? this.lineColor.type : 'liner',
+                scale: this.lineColor.scale ? this.lineColor.scale : 1,
+                angle: this.lineColor.angle ? this.lineColor.angle : 0,
+            }, this.x + this.width / 2, this.y + this.height / 2, this.width)
+        } else {
+            this.lineColor = 'black';
+        }
+    }
+    if (typeof this.bgColor == 'object') {
+        if (this.bgColor.values.length) {
+            this.bgColor.values = this.canvas.createGradient(this.ctx, {
+                color: this.bgColor.values,
+                type: this.bgColor.type ? this.bgColor.type : 'liner',
+                scale: this.bgColor.scale ? this.bgColor.scale : 1,
+                angle: this.bgColor.angle ? this.bgColor.angle : 0,
+            }, this.x + this.width / 2, this.y + this.height / 2, this.width)
+        } else {
+            this.bgColor.values = 'black';
+        }
+    }
+}
+CanvasRect.prototype.draw = function (callback) {
+    let fn = (fillStyle, imgW, imgH) => {
+        this.ctx.save();
+        this.ctx.rect(this.x, this.y, this.width, this.height);
+        if (fillStyle) {
+            console.log(imgW, imgH)
+            this.ctx.translate(this.x + (this.width - imgW) / 2, this.y + (this.height - imgH) / 2);
+        } else {
+            fillStyle = this.bgColor.values;
+        }
+        this.ctx.fillStyle = fillStyle;
+        this.ctx.fill();
+        this.ctx.restore();
+        this.ctx.save()
+        this.ctx.lineWidth = this.lineWidth;
+        this.ctx.strokeStyle = this.lineColor;
+        this.ctx.stroke();
+        this.ctx.restore();
+        if (this.content && this.content.text) {
+            this.ctx.save();
+            this.ctx.translate(this.x, this.y)
+            this.content.ctx = this.ctx;
+            this.content.textType = 'rect';
+            if (!this.content.vertical) {
+                this.content.vertical = 'middle';
+            }
+            if (!this.content.align) {
+                this.content.align = 'center';
+            }
+            this.content.width = this.width;
+            this.content.height = this.height;
+            this.content.canvas = this.canvas;
+            this.textCtx = new CanvasText(this.content);
+            this.textCtx.draw();
+            this.ctx.restore();
+        }
+        callback && callback.call(this);
+    }
+    if (this.bgColor.url) {
+        this.canvas.createImageElement(this.bgColor.url, (img) => {
+            let bg = this.ctx.createPattern(img, this.bgColor.repeat ? 'repeat' : 'no-repeat');
+            fn.call(this, bg, img.width, img.height)
+        })
+    } else {
+        fn.call(this);
+    }
+    return this;
+}
+
+/**********************************图片****************************************/
+if (typeof CanvasImage != 'undefined') {
+    delete CanvasImage;
+}
+var CanvasImage = function () {
+    CommonAttributes.call(this, ...arguments);
+    if (name && this.contexts[name] && !coverName) {
+        throw new Error(name + ' 索引已存在，如需可设置参数coverName:true强制覆盖原有context')
+    }
+    return this;
+}
+CanvasImage.prototype.draw = function () {
+    this.canvas.createImageElement(this.imgUrl, (img) => {
+        this.ctx.save();
+        if (!this.width && !this.height) {
+            this.width = img.width;
+            this.height = img.height;
+        } else if (!this.width || !this.height) {
+            let p = img.width / img.height;
+            this.width ? this.height = this.width / p : this.width = this.height * p;
+        }
+        switch (this.align) {
+            case 'center':
+                this.x = (this.canvas.width - this.width) / 2;
+                break;
+            case 'right':
+                this.x = this.canvas.width - this.width;
+                break;
+        }
+        switch (this.vertical) {
+            case 'middle':
+                this.y = (this.canvas.height - this.height) / 2;
+                break;
+            case 'bottom':
+                this.y = this.canvas.height - this.height;
+                break;
+        }
+        if (this.left) {
+            this.x = this.x + this.left;
+        } else if (this.right) {
+            this.x = this.x - this.right;
+        }
+        if (this.top) {
+            this.y = this.y + this.top;
+        } else if (this.bottom) {
+            this.y = this.y - this.bottom;
+        }
+        this.ctx.shadowBlur = this.shadowBlur;
+        this.ctx.shadowColor = this.shadowColor;
+        this.ctx.shadowOffsetY = this.shadowOffsetY;
+        this.ctx.shadowOffsetX = this.shadowOffsetX;
+        if (this.imgCut) {
+            this.ctx.drawImage(img, this.sx, this.sy, this.swidth, this.sheight, this.x, this.y, this.width, this.height);
+        } else {
+            this.ctx.drawImage(img, this.x, this.y, this.width, this.height);
+        }
+        this.ctx.restore();
+    })
+    return this;
+}
+
+/**************************************************************************/
+if (typeof CanvasLine != 'undefined') {
+    delete CanvasLine;
+}
+var CanvasLine = function () {
+    CommonAttributes.call(this, ...arguments);
+    return this;
+}
+CanvasLine.prototype.draw = function () {
+    if (this.points.length) {
+        let minX = 0, minY = 0, maxX = 0, maxY = 0, points = this.points;
+        this.ctx.save();
+        let beginPoint = points.shift();
+        this.ctx.beginPath();
+        this.ctx.lineJoin = this.lineJoin;
+        this.ctx.miterLimit = this.miterLimit;
+        this.ctx.shadowColor = this.shadowColor;
+        this.ctx.shadowBlur = this.shadowBlur;
+        this.ctx.shadowOffsetY = this.shadowOffsetY;
+        this.ctx.shadowOffsetX = this.shadowOffsetX;
+        this.ctx.lineCap = this.lineCap;
+        this.ctx.lineWidth = this.lineWidth;
+        if (typeof beginPoint == 'object') {
+            maxX = minX = beginPoint[0];
+            maxY = minY = beginPoint[1];
+            this.ctx.moveTo(beginPoint[0], beginPoint[1]);
+        } else {
+            maxX = maxY = minX = minY = beginPoint;
+            this.ctx.moveTo(beginPoint, beginPoint);
+        }
+        points.forEach((point) => {
+            if (typeof point == 'object') {
+                if (minX > point[0]) {
+                    minX = point[0];
+                }
+                if (minY > point[1]) {
+                    minY = point[1];
+                }
+                if (maxX < point[0]) {
+                    maxX = point[0];
+                }
+                if (maxY < point[1]) {
+                    maxY = point[1];
+                }
+                this.ctx.lineTo(point[0], point[1])
+            } else {
+                if (minX > point) {
+                    minX = point;
+                }
+                if (minY > point) {
+                    minY = point;
+                }
+                if (maxX < point) {
+                    maxX = point;
+                }
+                if (maxY < point) {
+                    maxY = point;
+                }
+                this.ctx.lineTo(point, point)
+            }
+        })
+        if (typeof this.lineColor == 'object') {
+            if (this.lineColor.values.length) {
+                let r = Math.sqrt(Math.pow(maxX - minX, 2) + Math.pow(maxY - minY, 2)) / 2;
+                this.lineColor = this.canvas.createGradient(this.ctx, {
+                    color: this.lineColor.values,
+                    angle: this.lineColor.angle ? this.lineColor.angle : 0,
+                    scale: this.lineColor.scale ? this.lineColor.scale : 1,
+                    type: this.lineColor.type ? this.lineColor.type : 'liner',
+                }, minX + (maxX - minX) / 2, minY + (maxY - minY) / 2, r)
+            } else {
+                this.lineColor = 'black';
+            }
+        }
+        this.ctx.strokeStyle = this.lineColor;
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+    return this;
+}

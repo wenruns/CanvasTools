@@ -253,6 +253,9 @@ CanvasTools.prototype.addRect = function () {
 }
 
 /**************************************公共属性************************************/
+if (typeof CommonAttributes != "undefined") {
+    delete CommonAttributes;
+}
 var CommonAttributes = function () {
     this.canvas = arguments[0].canvas;
     if (arguments[0].ctx) {

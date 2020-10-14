@@ -16,11 +16,17 @@ var CanvasTools = function ({
         eleId,
         bgColor,
     }
+    console.log(this)
     this.canvasBox = document.getElementById(eleId);
-    this.width = this.canvasBox.width;
-    this.height = this.canvasBox.height;
+    this.width = this.canvasBox.clientWidth;
+    this.height = this.canvasBox.clientHeight;
+    this.canvasBox.height = this.height;
+    this.canvasBox.width = this.width;
     this.contexts = new Array();
     this.counter = 0;
+    this.toDraw = [];
+    this.hadDraw = [];
+    this.drawing = false;
     this.init();
 }
 
@@ -63,6 +69,35 @@ CanvasTools.prototype.init = function () {
     }
 }
 
+CanvasTools.prototype.draw = function () {
+    if (this.drawing) {
+        return;
+    }
+    this.drawing = true;
+    let toDraw = this.toDraw;
+    this.toDraw = [];
+    let fn = () => {
+        let index = Object.keys(toDraw).shift();
+        if (index) {
+            this.contexts[index].draw(() => {
+                this.hadDraw[index] = toDraw[index];
+                delete toDraw[index];
+                if (Object.keys(toDraw).length) {
+                    fn.call(this);
+                } else {
+                    this.drawing = false;
+                    if (this.toDraw.length) {
+                        this.draw();
+                    }
+                }
+            })
+        }
+    };
+    fn.call(this);
+
+    return this;
+}
+
 CanvasTools.prototype.createImageElement = function (url, onload) {
     let img = new Image();
     img.crossOrigin = 'anonymous'
@@ -92,10 +127,14 @@ CanvasTools.prototype.createImageElement = function (url, onload) {
  */
 CanvasTools.prototype.addImage = function () {
     arguments[0].canvas = this;
-    this.contexts.push((new CanvasImage(...arguments)).draw());
+    this.contexts.push((new CanvasImage(...arguments)));
     return this;
 }
 
+CanvasTools.prototype.pushToDraw = function (name) {
+    this.toDraw[this.contexts.length] = name;
+    return this;
+}
 
 /**
  * 折线
@@ -113,9 +152,9 @@ CanvasTools.prototype.addImage = function () {
  * @param shadowOffsetY
  * @returns {CanvasTools}
  */
-CanvasTools.prototype.line = function () {
+CanvasTools.prototype.addLine = function () {
     arguments[0].canvas = this;
-    this.contexts.push((new CanvasLine(...arguments)).draw());
+    this.contexts.push((new CanvasLine(...arguments)));
     return this;
 }
 
@@ -134,7 +173,7 @@ CanvasTools.prototype.line = function () {
  */
 CanvasTools.prototype.addText = function () {
     arguments[0].canvas = this;
-    this.contexts.push((new CanvasText(...arguments)).draw())
+    this.contexts.push((new CanvasText(...arguments)))
     return this;
 }
 
@@ -169,7 +208,6 @@ CanvasTools.prototype.createGradient = function (ctx, options, x = 0, y = 0, r =
         gradient = ctx.createLinearGradient(sx, sy, ex, ey);
     }
     options.color.forEach(function (item, key) {
-        // console.log(item, key, key * point)
         gradient.addColorStop(key * point, item);
     })
     return gradient;
@@ -181,7 +219,16 @@ CanvasTools.prototype.createGradient = function (ctx, options, x = 0, y = 0, r =
  */
 CanvasTools.prototype.addCircle = function () {
     arguments[0].canvas = this;
-    this.contexts.push((new CanvasCircle(...arguments)).draw())
+    this.contexts.push((new CanvasCircle(...arguments)))
+    return this;
+}
+
+CanvasTools.prototype.switch = function (key, options) {
+    if (options[key]) {
+        options[key].call();
+    } else if (options.default) {
+        options.default.call();
+    }
     return this;
 }
 
@@ -248,21 +295,17 @@ CanvasTools.prototype.curveLine = function ({
 
 CanvasTools.prototype.addRect = function () {
     arguments[0].canvas = this;
-    this.contexts.push((new CanvasRect(...arguments)).draw())
+    this.contexts.push((new CanvasRect(...arguments)))
     return this;
 }
 
 /**************************************公共属性************************************/
-if (typeof CommonAttributes != "undefined") {
+if (typeof CommonAttributes != 'undefined') {
     delete CommonAttributes;
 }
 var CommonAttributes = function () {
+    // console.log(this)
     this.canvas = arguments[0].canvas;
-    if (arguments[0].ctx) {
-        this.ctx = arguments[0].ctx;
-    } else {
-        this.ctx = this.canvas.canvasBox.getContext('2d');
-    }
     this.points = [];
     this.imgUrl = '';
     this.imgCut = false;
@@ -283,6 +326,8 @@ var CommonAttributes = function () {
     this.right = 0;
     this.top = 0;
     this.bottom = 0;
+    this.globalCompositeOperation = 'source-over';
+    this.rotate = 0;
     this.bgColor = {
         values: [],
         type: 'liner',
@@ -327,7 +372,7 @@ var CommonAttributes = function () {
     this.lineJoin = 'round';
     this.lineCap = 'round';
     this.lineColor = {
-        values: ['black'],
+        values: [],
         type: 'liner',
         scale: 1,
         angle: 0,
@@ -343,8 +388,49 @@ var CommonAttributes = function () {
                 this[i][j] = argv[i][j];
             }
         } else {
-            this[i] = argv[i];
+            if (['r', 'width', 'height', 'left', 'right', 'bottom', 'top'].indexOf(i) >= 0 && typeof argv[i] == 'string') {
+                let num = Number(argv[i].replace(/[^0-9]/ig, ""));
+                if (argv[i].indexOf('%') >= 0) {
+                    this.canvas.switch(i, {
+                        width: () => {
+                            this.width = this.canvas.width * num / 100;
+                        },
+                        height: () => {
+                            this.height = this.canvas.height * num / 100;
+                        },
+                        r: () => {
+                            this.r = Math.sqrt(Math.pow(this.canvas.width, 2) + Math.pow(this.canvas.height, 2)) * num / 100;
+                        },
+                        left: () => {
+                            this.left = this.canvas.width * num / 100;
+                        },
+                        right: () => {
+                            this.right = this.canvas.width * num / 100;
+                        },
+                        bottom: () => {
+                            this.bottom = this.canvas.height * num / 100;
+                        },
+                        top: () => {
+                            this.top = this.canvas.height * num / 100;
+                        }
+                    })
+                } else {
+                    this[i] = num;
+                }
+            } else {
+                this[i] = argv[i];
+            }
         }
+    }
+    if (!this.name) {
+        this.name = this.constructor.name + "-" + this.canvas.counter;
+        this.canvas.counter += 1;
+    }
+    if (arguments[0].ctx) {
+        this.ctx = arguments[0].ctx;
+    } else {
+        this.ctx = this.canvas.canvasBox.getContext('2d');
+        this.canvas.pushToDraw(this.name);
     }
     return this;
 }
@@ -355,22 +441,39 @@ if (typeof CanvasCircle != "undefined") {
 }
 var CanvasCircle = function () {
     CommonAttributes.call(this, ...arguments);
-    if (!this.name) {
-        this.name = 'circle-' + this.canvas.counter;
-        this.canvas.counter += 1;
-    }
     // 计算x,y
-    this.x = this.r;
-    this.y = this.r;
+    this.canvas.switch(this.align, {
+        right: () => {
+            this.x = this.canvas.width - this.r;
+        },
+        center: () => {
+            this.x = this.canvas.width / 2;
+        },
+        default: () => {
+            this.x = this.r;
+        }
+    })
+
+    this.canvas.switch(this.vertical, {
+        middle: () => {
+            this.y = this.canvas.height / 2;
+        },
+        bottom: () => {
+            this.y = this.canvas.height - this.r;
+        },
+        default: () => {
+            this.y = this.r;
+        }
+    })
     if (this.left) {
-        this.x = this.r + this.left;
+        this.x += this.left;
     } else if (this.right) {
-        this.x = this.canvas.width - this.r - this.right;
+        this.x -= this.right;
     }
     if (this.top) {
-        this.y = this.r + this.top;
+        this.y += this.top;
     } else if (this.bottom) {
-        this.y = this.canvas.height - this.r - this.bottom;
+        this.y -= this.bottom;
     }
     if (typeof this.lineColor == 'object') {
         if (this.lineColor.values && this.lineColor.values.length) {
@@ -379,7 +482,7 @@ var CanvasCircle = function () {
                 angle: this.lineColor.angle ? this.lineColor.angle : 0,
                 scale: this.lineColor.scale ? this.lineColor.scale : 1,
                 type: this.lineColor.type ? this.lineColor.type : 'liner',
-            }, this.x, this.y, this.r);
+            }, 0, 0, this.r);
         } else {
             this.lineColor = 'black';
         }
@@ -391,10 +494,14 @@ var CanvasCircle = function () {
                 angle: this.bgColor.angle ? this.bgColor.angle : 0,
                 scale: this.bgColor.scale ? this.bgColor.scale : 1,
                 type: this.bgColor.type ? this.bgColor.type : 'liner',
-            }, this.x, this.y, this.r);
+            }, 0, 0, this.r);
+        }
+    } else {
+        this.bgColor = {
+            values: this.bgColor,
         }
     }
-    if (!this.content.color || (typeof this.content.color == 'object' && (!this.content.color.values || !this.content.color.values.length))) {
+    if ((this.content && !this.content.color) || (this.content && typeof this.content.color == 'object' && (!this.content.color.values || !this.content.color.values.length))) {
         this.content.color = 'black';
     }
     return this;
@@ -404,18 +511,22 @@ CanvasCircle.prototype.draw = function (callback = null) {
     let fn = (fillStyle, imgW, imgH) => {
         this.ctx.save();
         this.ctx.beginPath();
+        this.ctx.translate(this.x, this.y)
+        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
+        this.ctx.rotate(this.rotate * Math.PI / 180);
+        this.ctx.arc(0, 0, this.r, this.sAngle, this.eAngle, this.counterclockwise);
         // 实心圆
-        this.ctx.arc(this.x, this.y, this.r, this.sAngle, this.eAngle, this.counterclockwise);
         if (fillStyle) {
-            this.ctx.translate(this.x - imgW / 2, this.y - imgH / 2);
+            this.ctx.save();
+            this.ctx.translate(-imgW / 2, -imgH / 2);
+            this.ctx.fillStyle = fillStyle;
+            this.ctx.fill();
+            this.ctx.restore();
         } else {
-            fillStyle = this.bgColor.values;
+            this.ctx.fillStyle = this.bgColor.values;
+            this.ctx.fill();
         }
-        this.ctx.fillStyle = fillStyle;
-        this.ctx.fill();
-        this.ctx.restore();
         // 空心圆
-        this.ctx.save();
         this.ctx.lineWidth = this.lineWidth;
         this.ctx.strokeStyle = this.lineColor;
         this.ctx.shadowBlur = this.shadowBlur;
@@ -423,10 +534,7 @@ CanvasCircle.prototype.draw = function (callback = null) {
         this.ctx.shadowOffsetX = this.shadowOffsetX;
         this.ctx.shadowOffsetY = this.shadowOffsetY;
         this.ctx.stroke();
-        this.ctx.restore();
         if (this.content && this.content.text) {
-            this.ctx.save();
-            this.ctx.translate(this.x, this.y)
             this.content.ctx = this.ctx;
             this.content.textType = 'circle';
             this.content.r = this.r;
@@ -436,11 +544,12 @@ CanvasCircle.prototype.draw = function (callback = null) {
             if (!this.content.align) {
                 this.content.align = 'center';
             }
+            this.content.rotate = this.rotate;
             this.content.canvas = this.canvas;
             this.textCtx = new CanvasText(this.content);
             this.textCtx.draw();
-            this.ctx.restore();
         }
+        this.ctx.restore();
         callback && callback.call(this);
     }
     if (this.bgColor.url) {
@@ -461,141 +570,163 @@ if (typeof CanvasText != 'undefined') {
 }
 var CanvasText = function () {
     CommonAttributes.call(this, ...arguments);
-    let x = this.x, y = this.y;
+    let x = 0, y = 0, x1 = 0, y1 = 0, fx = 1, fy = 1;
     if (!this.text) {
         throw new Error('未设置文本');
     }
     this.textW = this.ctx.measureText(this.text).width;
 
-    this.switch(this.align, {
+    this.canvas.switch(this.align, {
         right: () => {
-            this.switch(this.textType, {
+            this.textAlign = 'right';
+            x = -this.textW / 1.3;
+            this.canvas.switch(this.textType, {
                 default: () => {
-                    this.x = this.canvas.width;
+                    // x1 += this.canvas.width;
+                    x1 += this.canvas.width - this.textW / 1.2;
+                    this.textAlign = 'center';
+                    x = 0;
                 },
                 circle: () => {
-                    this.x = this.r;
+                    x1 += this.r;
                 },
                 rect: () => {
-                    this.x = this.width;
+                    x1 += this.width / 2;
                 }
             })
-            x = this.x - this.textW / 1.5;
-            this.textAlign = 'right';
         },
         center: () => {
-            this.switch(this.textType, {
+            this.canvas.switch(this.textType, {
                 default: () => {
-                    this.x = (this.canvas.width) / 2;
+                    x1 += (this.canvas.width) / 2;
+                },
+                circle: () => {
+
                 },
                 rect: () => {
-                    this.x = this.width / 2;
+                    // x1 += this.width / 2;
                 }
             })
-            x = this.x;
+            x = 0;
             this.textAlign = 'center';
         },
         default: () => {
-            this.switch(this.textType, {
-                circle: () => {
-                    this.x = -this.r;
-                },
-            })
-            x = this.x + this.textW / 1.5;
             this.textAlign = 'left';
-        }
-    })
-
-    this.switch(this.vertical, {
-        middle: () => {
-            this.switch(this.textType, {
+            x = this.textW / 2;
+            this.canvas.switch(this.textType, {
                 default: () => {
-                    this.y = this.canvas.height / 2;
+                    this.textAlign = 'center';
+                    x1 += this.textW / 1.2;
+                    x = 0;
+                },
+                circle: () => {
+                    x1 -= this.r;
                 },
                 rect: () => {
-                    this.y = this.height / 2;
+                    x1 -= this.width / 2;
+                }
+            })
+            fx = -1 * fx;
+        }
+    })
+    this.canvas.switch(this.vertical, {
+        middle: () => {
+            this.canvas.switch(this.textType, {
+                default: () => {
+                    y1 += this.canvas.height / 2;
+                },
+                circle: () => {
+
+                },
+                rect: () => {
+                    // this.y += aL * Math.sin(aDeg * (Math.PI / 180));
+                    // y1 += this.height / 2;
                 }
             })
             this.textBaseline = 'middle';
         },
         bottom: () => {
-            this.switch(this.textType, {
+            this.canvas.switch(this.textType, {
                 default: () => {
-                    this.y = this.canvas.height;
+                    y1 += this.canvas.height;
                 },
                 rect: () => {
-                    this.y = this.height;
+                    y1 += this.height / 2;
                 },
                 circle: () => {
-                    this.y = this.r;
+                    y1 += this.r;
                 }
             })
             this.textBaseline = 'bottom';
         },
         default: () => {
-            this.switch(this.textType, {
+            this.canvas.switch(this.textType, {
                 circle: () => {
-                    this.y = -this.r;
+                    y1 -= this.r;
+                },
+                rect: () => {
+                    y1 -= this.height / 2;
                 }
             })
             this.textBaseline = 'top';
         }
     })
     if (this.top) {
-        this.y = this.y + this.top;
+        y1 += this.top;
     } else if (this.bottom) {
-        this.y = this.y - this.bottom;
+        y1 -= this.bottom;
     }
     if (this.left) {
-        this.x = this.x + this.left;
-        x += this.left;
+        x1 += this.left;
     } else if (this.right) {
-        this.x = this.x - this.right;
-        x -= this.right;
+        x1 -= this.right;
     }
-    if (!this.name) {
-        this.name = 'text-' + this.canvas.counter;
-        this.canvas.counter += 1;
+    if (this.textType) {
+        let aDeg = Math.atan(y1 / x1) / (Math.PI / 180),
+            aL = Math.sqrt(Math.pow(x1, 2) + Math.pow(y1, 2));
+        if (!aDeg) {
+            aDeg = 0;
+        }
+        aDeg = (this.rotate + aDeg) % 360;
+        this.x += aL * Math.cos(aDeg * (Math.PI / 180)) * fx;
+        this.y += aL * Math.sin(aDeg * (Math.PI / 180)) * fx;
+    } else {
+        this.x += x1;
+        this.y += y1;
     }
+
     if (typeof this.textColor == 'object') {
-        // console.log(this.x, this.y, this.textW, '.>>>>>')
         this.textColor = this.canvas.createGradient(this.ctx, {
             color: this.textColor.values,
             type: this.textColor.type ? this.textColor.type : 'liner',
             scale: this.textColor.scale ? this.textColor.scale : 1,
-            angle: this.textColor.angle ? this.textColor.angle : 0,
-        }, x, y, this.textW / 2)
+            angle: this.textColor.angle ? this.textColor.angle + this.rotate : this.rotate,
+        }, x, y, this.textW)
     }
-}
-
-CanvasText.prototype.switch = function (key, callbacks) {
-    switch (key) {
-        case 'circle':
-            callbacks.circle && callbacks.circle.call(this);
-            break;
-        case 'rect':
-            callbacks.rect && callbacks.rect.call(this);
-            break;
-        case 'right':
-            callbacks.right && callbacks.right.call(this);
-            break;
-        case 'center':
-            callbacks.center && callbacks.center.call(this);
-            break;
-        case 'middle':
-            callbacks.middle && callbacks.middle.call(this);
-            break;
-        case 'bottom':
-            callbacks.bottom && callbacks.bottom.call(this);
-            break;
-        default:
-            callbacks.default && callbacks.default.call(this);
-    }
+    // this.canvas.switch(this.textType, {
+    //     null: () => {
+    //         console.log('<<<<<<');
+    //         console.log('this.x=' + this.x, 'this.y=' + this.y, 'fx=' + fx)
+    //         console.log(this.align, this.vertical, this.textType)
+    //         console.log('w=' + this.width, 'h=' + this.height);
+    //         console.log('x1=' + x1, 'y1=' + y1);
+    //         console.log('deg=' + aDeg, 'al=' + aL)
+    //         console.log('cos=' + aL * Math.cos(aDeg * (Math.PI / 180)), "sin=" + aL * Math.sin(aDeg * (Math.PI / 180)));
+    //         // console.log(this.textW * (Math.cos(this.rotate * (Math.PI / 180))));
+    //         console.log(x, y, this.text)
+    //         console.log('>>>>>');
+    //
+    //     }
+    // })
+    return this;
 }
 
 CanvasText.prototype.draw = function (callback = null) {
     this.ctx.save();
     this.ctx.beginPath();
+    this.ctx.translate(this.x, this.y);
+    this.ctx.rotate(this.rotate * Math.PI / 180);
+    this.ctx.globalCompositeOperation = this.globalCompositeOperation;
     this.ctx.shadowBlur = this.shadowBlur;
     this.ctx.shadowColor = this.shadowColor;
     this.ctx.shadowOffsetX = this.shadowOffsetX;
@@ -607,16 +738,16 @@ CanvasText.prototype.draw = function (callback = null) {
     if (this.isStroke) {
         this.ctx.strokeStyle = this.textColor;
         if (this.maxWidth > 0) {
-            this.ctx.strokeText(this.text, this.x, this.y, this.maxWidth);
+            this.ctx.strokeText(this.text, 0, 0, this.maxWidth);
         } else {
-            this.ctx.strokeText(this.text, this.x, this.y);
+            this.ctx.strokeText(this.text, 0, 0);
         }
     } else {
         this.ctx.fillStyle = this.textColor;
         if (this.maxWidth > 0) {
-            this.ctx.fillText(this.text, this.x, this.y, this.maxWidth);
+            this.ctx.fillText(this.text, 0, 0, this.maxWidth);
         } else {
-            this.ctx.fillText(this.text, this.x, this.y);
+            this.ctx.fillText(this.text, 0, 0);
         }
     }
     this.ctx.restore();
@@ -630,7 +761,7 @@ if (typeof CanvasRect != 'undefined') {
 }
 var CanvasRect = function () {
     CommonAttributes.call(this, ...arguments);
-    // console.log(this);
+
     if (this.align == 'right') {
         this.x = this.canvas.width - this.width;
     } else if (this.align == 'center') {
@@ -651,6 +782,14 @@ var CanvasRect = function () {
     } else if (this.bottom) {
         this.y = this.y - this.bottom;
     }
+
+    if (!this.bgColor.angle || this.bgColor.angle % 360 == 0 || this.bgColor.angle % 360 == 180) {
+        this.r = this.width / 2;
+    } else if (this.bgColor.angle % 360 == 90 || this.bgColor.angle % 360 == 270) {
+        this.r = this.height / 2;
+    } else {
+        this.r = Math.sqrt(Math.pow(this.width, 2) + Math.pow(this.height, 2)) / 2;
+    }
     if (typeof this.lineColor == 'object') {
         if (this.lineColor.values.length) {
             this.lineColor = this.canvas.createGradient(this.ctx, {
@@ -658,9 +797,7 @@ var CanvasRect = function () {
                 type: this.lineColor.type ? this.lineColor.type : 'liner',
                 scale: this.lineColor.scale ? this.lineColor.scale : 1,
                 angle: this.lineColor.angle ? this.lineColor.angle : 0,
-            }, this.x + this.width / 2, this.y + this.height / 2, this.width)
-        } else {
-            this.lineColor = 'black';
+            }, 0, 0, this.r);
         }
     }
     if (typeof this.bgColor == 'object') {
@@ -670,35 +807,45 @@ var CanvasRect = function () {
                 type: this.bgColor.type ? this.bgColor.type : 'liner',
                 scale: this.bgColor.scale ? this.bgColor.scale : 1,
                 angle: this.bgColor.angle ? this.bgColor.angle : 0,
-            }, this.x + this.width / 2, this.y + this.height / 2, this.width)
-        } else {
-            this.bgColor.values = 'black';
+            }, 0, 0, this.r);
+        }
+    } else {
+        this.bgColor = {
+            values: this.bgColor,
         }
     }
+    return this;
 }
 CanvasRect.prototype.draw = function (callback) {
     let fn = (fillStyle, imgW, imgH) => {
         this.ctx.save();
-        this.ctx.rect(this.x, this.y, this.width, this.height);
+        this.ctx.beginPath();
+        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
+        this.x += this.width / 2;
+        this.y += this.height / 2;
+        this.ctx.translate(this.x, this.y);
+        this.ctx.rotate(Number(this.rotate) * Math.PI / 180);
+        this.ctx.rect(0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
         if (fillStyle) {
-            console.log(imgW, imgH)
-            this.ctx.translate(this.x + (this.width - imgW) / 2, this.y + (this.height - imgH) / 2);
+            this.ctx.translate(-imgW / 2, -imgH / 2);
         } else {
             fillStyle = this.bgColor.values;
         }
-        this.ctx.fillStyle = fillStyle;
-        this.ctx.fill();
-        this.ctx.restore();
-        this.ctx.save()
+        if (fillStyle instanceof CanvasGradient || fillStyle instanceof CanvasPattern || fillStyle.length) {
+            this.ctx.fillStyle = fillStyle;
+            this.ctx.fill();
+        }
         this.ctx.lineWidth = this.lineWidth;
         this.ctx.strokeStyle = this.lineColor;
         this.ctx.stroke();
         this.ctx.restore();
         if (this.content && this.content.text) {
-            this.ctx.save();
-            this.ctx.translate(this.x, this.y)
+            // this.ctx.save();
             this.content.ctx = this.ctx;
             this.content.textType = 'rect';
+            this.content.x = this.x;
+            this.content.y = this.y;
+            this.content.rotate = this.rotate;
             if (!this.content.vertical) {
                 this.content.vertical = 'middle';
             }
@@ -707,17 +854,18 @@ CanvasRect.prototype.draw = function (callback) {
             }
             this.content.width = this.width;
             this.content.height = this.height;
+
             this.content.canvas = this.canvas;
             this.textCtx = new CanvasText(this.content);
             this.textCtx.draw();
-            this.ctx.restore();
+            // this.ctx.restore();
         }
         callback && callback.call(this);
     }
     if (this.bgColor.url) {
         this.canvas.createImageElement(this.bgColor.url, (img) => {
             let bg = this.ctx.createPattern(img, this.bgColor.repeat ? 'repeat' : 'no-repeat');
-            fn.call(this, bg, img.width, img.height)
+            fn.call(this, bg, img.width, img.height);
         })
     } else {
         fn.call(this);
@@ -731,14 +879,12 @@ if (typeof CanvasImage != 'undefined') {
 }
 var CanvasImage = function () {
     CommonAttributes.call(this, ...arguments);
-    if (name && this.contexts[name] && !coverName) {
-        throw new Error(name + ' 索引已存在，如需可设置参数coverName:true强制覆盖原有context')
-    }
     return this;
 }
-CanvasImage.prototype.draw = function () {
+CanvasImage.prototype.draw = function (callback) {
     this.canvas.createImageElement(this.imgUrl, (img) => {
         this.ctx.save();
+        this.ctx.beginPath();
         if (!this.width && !this.height) {
             this.width = img.width;
             this.height = img.height;
@@ -772,34 +918,103 @@ CanvasImage.prototype.draw = function () {
         } else if (this.bottom) {
             this.y = this.y - this.bottom;
         }
+        this.x += this.width / 2;
+        this.y += this.height / 2;
+        this.ctx.translate(this.x, this.y);
+        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
+        this.ctx.rotate(this.rotate * Math.PI / 180);
         this.ctx.shadowBlur = this.shadowBlur;
         this.ctx.shadowColor = this.shadowColor;
         this.ctx.shadowOffsetY = this.shadowOffsetY;
         this.ctx.shadowOffsetX = this.shadowOffsetX;
         if (this.imgCut) {
-            this.ctx.drawImage(img, this.sx, this.sy, this.swidth, this.sheight, this.x, this.y, this.width, this.height);
+            this.ctx.drawImage(img, this.sx, this.sy, this.swidth, this.sheight, -this.width / 2, -this.height / 2, this.width, this.height);
         } else {
-            this.ctx.drawImage(img, this.x, this.y, this.width, this.height);
+            this.ctx.drawImage(img, -this.width / 2, -this.height / 2, this.width, this.height);
         }
         this.ctx.restore();
+        callback && callback.call(this);
     })
     return this;
 }
 
-/**************************************************************************/
+/*************************************连线*************************************/
 if (typeof CanvasLine != 'undefined') {
     delete CanvasLine;
 }
 var CanvasLine = function () {
     CommonAttributes.call(this, ...arguments);
+    let minX = 0, minY = 0, maxX = 0, maxY = 0, points = [], px = 0, py = 0;
+    this.points.forEach((point, key) => {
+        if (typeof point == 'object') {
+            if (typeof point[0] == 'string') {
+                let num = Number(point[0].replace(/[^0-9]/ig, ''));
+                if (point[0].indexOf('%') >= 0) {
+                    px = this.canvas.width * num / 100;
+                } else {
+                    px = num;
+                }
+            } else {
+                px = point[0];
+            }
+            if (typeof point[1] == 'string') {
+                let num = Number(point[1].replace(/[^0-9]/ig, ''));
+                if (point[1].indexOf('%') >= 0) {
+                    py = this.canvas.height * num / 100;
+                } else {
+                    py = num;
+                }
+            } else {
+                py = point[1];
+            }
+        } else {
+            if (typeof point == 'string') {
+                let num = Number(point.replace(/[^0-9]/ig, ''));
+                if (point.indexOf('%') >= 0) {
+                    px = this.canvas.width * num / 100;
+                    py = this.canvas.height * num / 100;
+                } else {
+                    py = px = num;
+                }
+            } else {
+                px = py = point;
+            }
+        }
+        if (key == 0) {
+            minX = maxX = px;
+            minY = maxY = py;
+        } else {
+            if (minX > px) {
+                minX = px;
+            }
+            if (minY > py) {
+                minY = py;
+            }
+            if (maxX < px) {
+                maxX = px;
+            }
+            if (maxY < py) {
+                maxY = py;
+            }
+        }
+        points.push([px, py]);
+    })
+    this.points = points;
+    this.maxX = maxX;
+    this.minX = minX;
+    this.maxY = maxY;
+    this.minY = minY;
+    this.r = Math.sqrt(Math.pow(this.maxX - this.minX, 2) + Math.pow(this.maxY - this.minY, 2)) / 2;
     return this;
 }
-CanvasLine.prototype.draw = function () {
+CanvasLine.prototype.draw = function (callback) {
     if (this.points.length) {
-        let minX = 0, minY = 0, maxX = 0, maxY = 0, points = this.points;
         this.ctx.save();
-        let beginPoint = points.shift();
         this.ctx.beginPath();
+        let rX = (this.maxX - this.minX) / 2, rY = (this.maxY - this.minY) / 2;
+        this.ctx.translate(this.minX + rX, this.minY + rY);
+        this.ctx.rotate(this.rotate * Math.PI / 180);
+        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
         this.ctx.lineJoin = this.lineJoin;
         this.ctx.miterLimit = this.miterLimit;
         this.ctx.shadowColor = this.shadowColor;
@@ -808,54 +1023,24 @@ CanvasLine.prototype.draw = function () {
         this.ctx.shadowOffsetX = this.shadowOffsetX;
         this.ctx.lineCap = this.lineCap;
         this.ctx.lineWidth = this.lineWidth;
-        if (typeof beginPoint == 'object') {
-            maxX = minX = beginPoint[0];
-            maxY = minY = beginPoint[1];
-            this.ctx.moveTo(beginPoint[0], beginPoint[1]);
-        } else {
-            maxX = maxY = minX = minY = beginPoint;
-            this.ctx.moveTo(beginPoint, beginPoint);
-        }
-        points.forEach((point) => {
-            if (typeof point == 'object') {
-                if (minX > point[0]) {
-                    minX = point[0];
-                }
-                if (minY > point[1]) {
-                    minY = point[1];
-                }
-                if (maxX < point[0]) {
-                    maxX = point[0];
-                }
-                if (maxY < point[1]) {
-                    maxY = point[1];
-                }
-                this.ctx.lineTo(point[0], point[1])
+        // console.log(this.maxX, this.minX, this.maxY, this.minY)
+        // console.log(this.x, this.y, this.r, rX, rY)
+        this.points.forEach((point, key) => {
+            // console.log(point, point[0] - rX - this.minX, point[1] - rY - this.minY)
+            if (key == 0) {
+                this.ctx.moveTo(point[0] - rX - this.minX, point[1] - rY - this.minY);
             } else {
-                if (minX > point) {
-                    minX = point;
-                }
-                if (minY > point) {
-                    minY = point;
-                }
-                if (maxX < point) {
-                    maxX = point;
-                }
-                if (maxY < point) {
-                    maxY = point;
-                }
-                this.ctx.lineTo(point, point)
+                this.ctx.lineTo(point[0] - rX - this.minX, point[1] - rY - this.minY);
             }
         })
         if (typeof this.lineColor == 'object') {
             if (this.lineColor.values.length) {
-                let r = Math.sqrt(Math.pow(maxX - minX, 2) + Math.pow(maxY - minY, 2)) / 2;
                 this.lineColor = this.canvas.createGradient(this.ctx, {
                     color: this.lineColor.values,
                     angle: this.lineColor.angle ? this.lineColor.angle : 0,
                     scale: this.lineColor.scale ? this.lineColor.scale : 1,
                     type: this.lineColor.type ? this.lineColor.type : 'liner',
-                }, minX + (maxX - minX) / 2, minY + (maxY - minY) / 2, r)
+                }, 0, 0, this.r);
             } else {
                 this.lineColor = 'black';
             }
@@ -863,6 +1048,9 @@ CanvasLine.prototype.draw = function () {
         this.ctx.strokeStyle = this.lineColor;
         this.ctx.stroke();
         this.ctx.restore();
+        callback && callback.call(this);
     }
     return this;
 }
+
+/*************************************扇形*************************************/

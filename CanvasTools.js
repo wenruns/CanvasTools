@@ -16,7 +16,6 @@ var CanvasTools = function ({
         eleId,
         bgColor,
     }
-    console.log(this)
     this.canvasBox = document.getElementById(eleId);
     this.width = this.canvasBox.clientWidth;
     this.height = this.canvasBox.clientHeight;
@@ -304,7 +303,6 @@ if (typeof CommonAttributes != 'undefined') {
     delete CommonAttributes;
 }
 var CommonAttributes = function () {
-    // console.log(this)
     this.canvas = arguments[0].canvas;
     this.points = [];
     this.imgUrl = '';
@@ -320,7 +318,7 @@ var CommonAttributes = function () {
     this.height = 0;
     this.name = null;
     this.sAngle = 0;
-    this.eAngle = 2 * Math.PI;
+    this.eAngle = 360;
     this.counterclockwise = false;
     this.left = 0;
     this.right = 0;
@@ -377,19 +375,24 @@ var CommonAttributes = function () {
         scale: 1,
         angle: 0,
     };
-    this.lineWidth = 1;
+    this.lineDash = null;
+    this.lineWidth = 0;
     let argv = arguments[0];
     for (var i in argv) {
         if (typeof argv[i] == 'object') {
-            for (var j in argv[i]) {
-                if (!this[i]) {
-                    this[i] = {};
+            if ('[object Array]' == Object.prototype.toString.call(argv[i])) {
+                this[i] = argv[i];
+            } else {
+                for (var j in argv[i]) {
+                    if (!this[i]) {
+                        this[i] = {};
+                    }
+                    this[i][j] = argv[i][j];
                 }
-                this[i][j] = argv[i][j];
             }
         } else {
-            if (['r', 'width', 'height', 'left', 'right', 'bottom', 'top'].indexOf(i) >= 0 && typeof argv[i] == 'string') {
-                let num = Number(argv[i].replace(/[^0-9]/ig, ""));
+            if (['r', 'width', 'height', 'left', 'right', 'bottom', 'top', 'x', 'y'].indexOf(i) >= 0 && typeof argv[i] == 'string') {
+                let num = Number(argv[i].replace(/[^0-9|\.]/ig, ""));
                 if (argv[i].indexOf('%') >= 0) {
                     this.canvas.switch(i, {
                         width: () => {
@@ -412,6 +415,12 @@ var CommonAttributes = function () {
                         },
                         top: () => {
                             this.top = this.canvas.height * num / 100;
+                        },
+                        x: () => {
+                            this.x = this.canvas.width * num / 100;
+                        },
+                        y: () => {
+                            this.y = this.canvas.height * num / 100;
                         }
                     })
                 } else {
@@ -432,6 +441,28 @@ var CommonAttributes = function () {
         this.ctx = this.canvas.canvasBox.getContext('2d');
         this.canvas.pushToDraw(this.name);
     }
+    this.drawCallback = () => {
+        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
+        this.ctx.lineWidth = this.lineWidth;
+        this.ctx.strokeStyle = this.lineColor;
+        this.ctx.shadowColor = this.shadowColor;
+        this.ctx.shadowOffsetX = this.shadowOffsetX;
+        this.ctx.shadowOffsetY = this.shadowOffsetY;
+        this.ctx.lineJoin = this.lineJoin;
+        this.ctx.miterLimit = this.miterLimit;
+        this.ctx.lineCap = this.lineCap;
+        if (this.lineDash) {
+            if (typeof this.lineDash) {
+                this.ctx.setLineDash(this.lineDash);
+            } else {
+                this.ctx.setLineDash([this.lineDash.replace(/[^0-9]/ig, '')])
+            }
+        }
+        if (this.lineWidth) {
+            if (['CanvasLine'].indexOf(this.constructor.name) < 0) this.ctx.closePath();
+            this.ctx.stroke();
+        }
+    }
     return this;
 }
 
@@ -442,29 +473,34 @@ if (typeof CanvasCircle != "undefined") {
 var CanvasCircle = function () {
     CommonAttributes.call(this, ...arguments);
     // 计算x,y
-    this.canvas.switch(this.align, {
-        right: () => {
-            this.x = this.canvas.width - this.r;
-        },
-        center: () => {
-            this.x = this.canvas.width / 2;
-        },
-        default: () => {
-            this.x = this.r;
-        }
-    })
+    console.log('%c x=' + this.x, 'color: pink')
+    if (!this.x) {
+        this.canvas.switch(this.align, {
+            right: () => {
+                this.x = this.canvas.width - this.r;
+            },
+            center: () => {
+                this.x = this.canvas.width / 2;
+            },
+            default: () => {
+                this.x = this.r;
+            }
+        })
+    }
 
-    this.canvas.switch(this.vertical, {
-        middle: () => {
-            this.y = this.canvas.height / 2;
-        },
-        bottom: () => {
-            this.y = this.canvas.height - this.r;
-        },
-        default: () => {
-            this.y = this.r;
-        }
-    })
+    if (!this.y) {
+        this.canvas.switch(this.vertical, {
+            middle: () => {
+                this.y = this.canvas.height / 2;
+            },
+            bottom: () => {
+                this.y = this.canvas.height - this.r;
+            },
+            default: () => {
+                this.y = this.r;
+            }
+        })
+    }
     if (this.left) {
         this.x += this.left;
     } else if (this.right) {
@@ -501,7 +537,10 @@ var CanvasCircle = function () {
             values: this.bgColor,
         }
     }
-    if ((this.content && !this.content.color) || (this.content && typeof this.content.color == 'object' && (!this.content.color.values || !this.content.color.values.length))) {
+    if ((this.content && !this.content.color)
+        || (this.content && typeof this.content.color == 'object'
+            && (!this.content.color.values
+                || !this.content.color.values.length))) {
         this.content.color = 'black';
     }
     return this;
@@ -509,12 +548,14 @@ var CanvasCircle = function () {
 
 CanvasCircle.prototype.draw = function (callback = null) {
     let fn = (fillStyle, imgW, imgH) => {
-        this.ctx.save();
         this.ctx.beginPath();
+        this.ctx.save();
         this.ctx.translate(this.x, this.y)
-        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
+        if (Math.abs(this.eAngle - this.sAngle) % 360) {
+            this.ctx.moveTo(0, 0);
+        }
         this.ctx.rotate(this.rotate * Math.PI / 180);
-        this.ctx.arc(0, 0, this.r, this.sAngle, this.eAngle, this.counterclockwise);
+        this.ctx.arc(0, 0, this.r + this.lineWidth / 2, this.sAngle * Math.PI / 180, this.eAngle * Math.PI / 180, this.counterclockwise);
         // 实心圆
         if (fillStyle) {
             this.ctx.save();
@@ -527,22 +568,52 @@ CanvasCircle.prototype.draw = function (callback = null) {
             this.ctx.fill();
         }
         // 空心圆
-        this.ctx.lineWidth = this.lineWidth;
-        this.ctx.strokeStyle = this.lineColor;
-        this.ctx.shadowBlur = this.shadowBlur;
-        this.ctx.shadowColor = this.shadowColor;
-        this.ctx.shadowOffsetX = this.shadowOffsetX;
-        this.ctx.shadowOffsetY = this.shadowOffsetY;
-        this.ctx.stroke();
+        this.drawCallback.call(this);
+
         if (this.content && this.content.text) {
             this.content.ctx = this.ctx;
             this.content.textType = 'circle';
-            this.content.r = this.r;
             if (!this.content.vertical) {
                 this.content.vertical = 'middle';
             }
             if (!this.content.align) {
                 this.content.align = 'center';
+            }
+            if (Math.abs(this.eAngle - this.sAngle) % 360) { // 扇形
+                this.content.maxWidth = this.r;
+                // this.content.r = this.r / 2;
+                let A = (this.eAngle - this.sAngle) / 2, B = (A + this.sAngle) % 360, C = 0, x = 0, y = 0,
+                    r = this.r * 3 / 4;
+                if (this.content.distance) {
+                    if (this.content.distance.indexOf('%') >= 0) {
+                        r = this.r * Number(this.content.distance.replace(/[^0-9]/ig, "")) / 100;
+                    } else {
+                        r = typeof this.content.distance == 'string' ? Number(this.content.distance) : this.content.distance;
+                    }
+                }
+                if (B <= 90) {
+                    C = B;
+                    y = Math.sin(C * Math.PI / 180) * r;
+                    x = Math.cos(C * Math.PI / 180) * r;
+                } else if (B <= 180) {
+                    C = B - 90;
+                    x = -Math.sin(C * Math.PI / 180) * r;
+                    y = Math.cos(C * Math.PI / 180) * r;
+                } else if (B <= 270) {
+                    C = B - 180;
+                    y = -Math.sin(C * Math.PI / 180) * r;
+                    x = -Math.cos(C * Math.PI / 180) * r;
+                } else {
+                    C = B - 270;
+                    x = Math.sin(C * Math.PI / 180) * r;
+                    y = -Math.cos(C * Math.PI / 180) * r;
+                }
+                this.content.x = x;
+                this.content.y = y;
+            } else {
+                this.content.r = this.r;
+                this.content.maxWidth = this.r * 2;
+                console.log('1121212')
             }
             this.content.rotate = this.rotate;
             this.content.canvas = this.canvas;
@@ -582,7 +653,6 @@ var CanvasText = function () {
             x = -this.textW / 1.3;
             this.canvas.switch(this.textType, {
                 default: () => {
-                    // x1 += this.canvas.width;
                     x1 += this.canvas.width - this.textW / 1.2;
                     this.textAlign = 'center';
                     x = 0;
@@ -596,23 +666,21 @@ var CanvasText = function () {
             })
         },
         center: () => {
+            x = 0;
             this.canvas.switch(this.textType, {
                 default: () => {
                     x1 += (this.canvas.width) / 2;
                 },
                 circle: () => {
-
                 },
                 rect: () => {
-                    // x1 += this.width / 2;
                 }
             })
-            x = 0;
             this.textAlign = 'center';
         },
         default: () => {
             this.textAlign = 'left';
-            x = this.textW / 2;
+            x = this.textW / 1.3;
             this.canvas.switch(this.textType, {
                 default: () => {
                     this.textAlign = 'center';
@@ -626,7 +694,6 @@ var CanvasText = function () {
                     x1 -= this.width / 2;
                 }
             })
-            fx = -1 * fx;
         }
     })
     this.canvas.switch(this.vertical, {
@@ -636,11 +703,8 @@ var CanvasText = function () {
                     y1 += this.canvas.height / 2;
                 },
                 circle: () => {
-
                 },
                 rect: () => {
-                    // this.y += aL * Math.sin(aDeg * (Math.PI / 180));
-                    // y1 += this.height / 2;
                 }
             })
             this.textBaseline = 'middle';
@@ -682,6 +746,8 @@ var CanvasText = function () {
         x1 -= this.right;
     }
     if (this.textType) {
+        if (x1 < 0) fx = -1;
+        if (y1 < 0) fy = -1;
         let aDeg = Math.atan(y1 / x1) / (Math.PI / 180),
             aL = Math.sqrt(Math.pow(x1, 2) + Math.pow(y1, 2));
         if (!aDeg) {
@@ -696,15 +762,18 @@ var CanvasText = function () {
     }
 
     if (typeof this.textColor == 'object') {
+        this.ctx.save();
+        this.ctx.translate(this.x, this.y);
         this.textColor = this.canvas.createGradient(this.ctx, {
             color: this.textColor.values,
             type: this.textColor.type ? this.textColor.type : 'liner',
             scale: this.textColor.scale ? this.textColor.scale : 1,
             angle: this.textColor.angle ? this.textColor.angle + this.rotate : this.rotate,
-        }, x, y, this.textW)
+        }, x, y, this.textW / 2)
+        this.ctx.restore();
     }
     // this.canvas.switch(this.textType, {
-    //     null: () => {
+    //     rect: () => {
     //         console.log('<<<<<<');
     //         console.log('this.x=' + this.x, 'this.y=' + this.y, 'fx=' + fx)
     //         console.log(this.align, this.vertical, this.textType)
@@ -726,15 +795,10 @@ CanvasText.prototype.draw = function (callback = null) {
     this.ctx.beginPath();
     this.ctx.translate(this.x, this.y);
     this.ctx.rotate(this.rotate * Math.PI / 180);
-    this.ctx.globalCompositeOperation = this.globalCompositeOperation;
-    this.ctx.shadowBlur = this.shadowBlur;
-    this.ctx.shadowColor = this.shadowColor;
-    this.ctx.shadowOffsetX = this.shadowOffsetX;
-    this.ctx.shadowOffsetY = this.shadowOffsetY;
+
     this.ctx.textBaseline = this.textBaseline;
     this.ctx.textAlign = this.textAlign;
     this.ctx.font = Object.values(this.font).join(' ');
-    this.ctx.lineWidth = this.lineWidth;
     if (this.isStroke) {
         this.ctx.strokeStyle = this.textColor;
         if (this.maxWidth > 0) {
@@ -750,6 +814,7 @@ CanvasText.prototype.draw = function (callback = null) {
             this.ctx.fillText(this.text, 0, 0);
         }
     }
+    this.drawCallback.call(this);
     this.ctx.restore();
     callback && callback.call(this);
     return this;
@@ -761,7 +826,6 @@ if (typeof CanvasRect != 'undefined') {
 }
 var CanvasRect = function () {
     CommonAttributes.call(this, ...arguments);
-
     if (this.align == 'right') {
         this.x = this.canvas.width - this.width;
     } else if (this.align == 'center') {
@@ -820,12 +884,11 @@ CanvasRect.prototype.draw = function (callback) {
     let fn = (fillStyle, imgW, imgH) => {
         this.ctx.save();
         this.ctx.beginPath();
-        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
         this.x += this.width / 2;
         this.y += this.height / 2;
         this.ctx.translate(this.x, this.y);
         this.ctx.rotate(Number(this.rotate) * Math.PI / 180);
-        this.ctx.rect(0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+        this.ctx.rect(0 - this.width / 2 - this.lineWidth, 0 - this.height / 2 - this.lineWidth, this.width + 2 * this.lineWidth, this.height + 2 * this.lineWidth);
         if (fillStyle) {
             this.ctx.translate(-imgW / 2, -imgH / 2);
         } else {
@@ -835,12 +898,9 @@ CanvasRect.prototype.draw = function (callback) {
             this.ctx.fillStyle = fillStyle;
             this.ctx.fill();
         }
-        this.ctx.lineWidth = this.lineWidth;
-        this.ctx.strokeStyle = this.lineColor;
-        this.ctx.stroke();
+        this.drawCallback.call(this);
         this.ctx.restore();
         if (this.content && this.content.text) {
-            // this.ctx.save();
             this.content.ctx = this.ctx;
             this.content.textType = 'rect';
             this.content.x = this.x;
@@ -854,11 +914,10 @@ CanvasRect.prototype.draw = function (callback) {
             }
             this.content.width = this.width;
             this.content.height = this.height;
-
+            this.content.maxWidth = this.width;
             this.content.canvas = this.canvas;
             this.textCtx = new CanvasText(this.content);
             this.textCtx.draw();
-            // this.ctx.restore();
         }
         callback && callback.call(this);
     }
@@ -921,17 +980,14 @@ CanvasImage.prototype.draw = function (callback) {
         this.x += this.width / 2;
         this.y += this.height / 2;
         this.ctx.translate(this.x, this.y);
-        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
         this.ctx.rotate(this.rotate * Math.PI / 180);
-        this.ctx.shadowBlur = this.shadowBlur;
-        this.ctx.shadowColor = this.shadowColor;
-        this.ctx.shadowOffsetY = this.shadowOffsetY;
-        this.ctx.shadowOffsetX = this.shadowOffsetX;
         if (this.imgCut) {
             this.ctx.drawImage(img, this.sx, this.sy, this.swidth, this.sheight, -this.width / 2, -this.height / 2, this.width, this.height);
         } else {
             this.ctx.drawImage(img, -this.width / 2, -this.height / 2, this.width, this.height);
         }
+        this.ctx.rect(0 - this.width / 2 - this.lineWidth, 0 - this.height / 2 - this.lineWidth, this.width + 2 * this.lineWidth, this.height + 2 * this.lineWidth);
+        this.drawCallback.call(this);
         this.ctx.restore();
         callback && callback.call(this);
     })
@@ -945,6 +1001,7 @@ if (typeof CanvasLine != 'undefined') {
 var CanvasLine = function () {
     CommonAttributes.call(this, ...arguments);
     let minX = 0, minY = 0, maxX = 0, maxY = 0, points = [], px = 0, py = 0;
+    if (!this.lineWidth) this.lineWidth = 1;
     this.points.forEach((point, key) => {
         if (typeof point == 'object') {
             if (typeof point[0] == 'string') {
@@ -1014,19 +1071,7 @@ CanvasLine.prototype.draw = function (callback) {
         let rX = (this.maxX - this.minX) / 2, rY = (this.maxY - this.minY) / 2;
         this.ctx.translate(this.minX + rX, this.minY + rY);
         this.ctx.rotate(this.rotate * Math.PI / 180);
-        this.ctx.globalCompositeOperation = this.globalCompositeOperation;
-        this.ctx.lineJoin = this.lineJoin;
-        this.ctx.miterLimit = this.miterLimit;
-        this.ctx.shadowColor = this.shadowColor;
-        this.ctx.shadowBlur = this.shadowBlur;
-        this.ctx.shadowOffsetY = this.shadowOffsetY;
-        this.ctx.shadowOffsetX = this.shadowOffsetX;
-        this.ctx.lineCap = this.lineCap;
-        this.ctx.lineWidth = this.lineWidth;
-        // console.log(this.maxX, this.minX, this.maxY, this.minY)
-        // console.log(this.x, this.y, this.r, rX, rY)
         this.points.forEach((point, key) => {
-            // console.log(point, point[0] - rX - this.minX, point[1] - rY - this.minY)
             if (key == 0) {
                 this.ctx.moveTo(point[0] - rX - this.minX, point[1] - rY - this.minY);
             } else {
@@ -1045,12 +1090,10 @@ CanvasLine.prototype.draw = function (callback) {
                 this.lineColor = 'black';
             }
         }
-        this.ctx.strokeStyle = this.lineColor;
-        this.ctx.stroke();
+        this.drawCallback.call(this);
         this.ctx.restore();
         callback && callback.call(this);
     }
     return this;
 }
 
-/*************************************扇形*************************************/
